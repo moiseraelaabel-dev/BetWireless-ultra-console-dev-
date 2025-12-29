@@ -4,19 +4,31 @@ import { PredictionResult, DataPoint, SportsPrediction, CategorizedSportsPredict
 
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
-async function withRetry<T>(fn: () => Promise<T>, maxRetries = 3, initialDelay = 1000): Promise<T> {
+// Persistent cache to minimize API hits
+let cachedSportsData: CategorizedSportsPredictions | null = null;
+let lastSportsFetchTime = 0;
+const CACHE_DURATION = 600000; // 10 minutes cache for global sports
+
+// Rate limit protection: Prevent rapid-fire market predictions
+let lastMarketPredictionTime = 0;
+const MARKET_COOLDOWN = 15000; // 15 seconds cooldown between manual scans
+
+async function withRetry<T>(fn: () => Promise<T>, maxRetries = 4, initialDelay = 10000): Promise<T> {
   let lastError: any;
   for (let i = 0; i < maxRetries; i++) {
     try {
       return await fn();
     } catch (error: any) {
       lastError = error;
-      const isRateLimit = error?.message?.includes('429') || error?.status === 429 || error?.message?.includes('RESOURCE_EXHAUSTED');
+      const errorMsg = error?.message || "";
+      const isRateLimit = errorMsg.includes('429') || error?.status === 429 || errorMsg.includes('RESOURCE_EXHAUSTED');
       const isServerError = error?.status >= 500;
 
       if (isRateLimit || isServerError) {
-        const delay = initialDelay * Math.pow(2, i);
-        console.warn(`API Error (${isRateLimit ? '429' : '5xx'}). Retrying in ${delay}ms... (Attempt ${i + 1}/${maxRetries})`);
+        // High backoff for 429s to allow quota to reset
+        const multiplier = isRateLimit ? 4 : 2;
+        const delay = initialDelay * Math.pow(multiplier, i);
+        console.warn(`API Quota Busy (${isRateLimit ? '429' : '5xx'}). Intelligent Backoff: ${delay}ms... (Attempt ${i + 1}/${maxRetries})`);
         await new Promise(resolve => setTimeout(resolve, delay));
         continue;
       }
@@ -27,6 +39,11 @@ async function withRetry<T>(fn: () => Promise<T>, maxRetries = 3, initialDelay =
 }
 
 export const getMarketPrediction = async (recentData: DataPoint[], marketNode: string = "Betway Botswana"): Promise<PredictionResult> => {
+  const now = Date.now();
+  if (now - lastMarketPredictionTime < MARKET_COOLDOWN) {
+    throw new Error("Local Rate Limit: Please wait for node synchronization before next scan.");
+  }
+  
   return withRetry(async () => {
     try {
       const dataString = recentData.map(d => `[${d.time}: ${d.value}]`).join(', ');
@@ -54,6 +71,7 @@ export const getMarketPrediction = async (recentData: DataPoint[], marketNode: s
         }
       });
 
+      lastMarketPredictionTime = Date.now();
       const text = response.text || '{}';
       const result = JSON.parse(text.trim());
       
@@ -71,11 +89,13 @@ export const getMarketPrediction = async (recentData: DataPoint[], marketNode: s
       console.error("Gemini Prediction Error:", error);
       throw error;
     }
-  }).catch(() => ({
+  }, 2, 15000).catch((e) => ({
     id: 'error-' + Date.now(),
     direction: 'NEUTRAL',
     confidence: 0,
-    reasoning: "Node connection exhausted. Regional clusters are under heavy load. Please wait 30 seconds for automatic retry.",
+    reasoning: e.message.includes('Local Rate Limit') 
+      ? e.message 
+      : "Node connection exhausted. Regional clusters are under heavy load. Please wait 30 seconds for automatic retry.",
     timestamp: "--:--"
   }));
 };
@@ -95,14 +115,23 @@ export const getSportsPrediction = async (userInput: string): Promise<SportsPred
 };
 
 export const refreshGlobalSportsMarkets = async (): Promise<CategorizedSportsPredictions> => {
+    // Check cache first to avoid unnecessary hits
+    const now = Date.now();
+    if (cachedSportsData && (now - lastSportsFetchTime < CACHE_DURATION)) {
+      return cachedSportsData;
+    }
+
     return withRetry(async () => {
         const response = await ai.models.generateContent({
             model: "gemini-3-flash-preview",
-            contents: "Scan global markets. Return JSON: {live:[], upcoming:[], highlighted:[]}",
+            contents: "Scan global markets. For live matches, include real-time scores and 1X2 odds. Return JSON: {live:[{match:string, league:string, score:string, odds:{home:number, draw:number, away:number}, minute:number}], upcoming:[], highlighted:[]}",
             config: { responseMimeType: "application/json" }
         });
-        return JSON.parse(response.text || '{ "live": [], "upcoming": [], "highlighted": [] }');
-    });
+        const result = JSON.parse(response.text || '{ "live": [], "upcoming": [], "highlighted": [] }');
+        cachedSportsData = result;
+        lastSportsFetchTime = Date.now();
+        return result;
+    }, 2, 20000); // Very patient backoff for global sync
 };
 
 export const analyzeCrashImage = async (base64Image: string, textPrompt: string): Promise<string> => {

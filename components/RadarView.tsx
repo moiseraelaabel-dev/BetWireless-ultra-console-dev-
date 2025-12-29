@@ -274,84 +274,6 @@ const RadarView: React.FC<RadarViewProps> = ({
            })}
         </div>
 
-        {/* ORBITING SIGNAL DETAILS AROUND CENTER HUB */}
-        <div className="absolute inset-0 pointer-events-none">
-           {positionedSignals.map(sig => {
-               const detailRadius = 24; 
-               const rad = ((sig.angle - 90) * Math.PI) / 180;
-               const x = 50 + detailRadius * Math.cos(rad);
-               const y = 50 + detailRadius * Math.sin(rad);
-               const isHigh = (sig.multiplier || 0) >= 2.10;
-               const isEditing = editingId === sig.id;
-
-               return (
-                   <div 
-                     key={`meta-${sig.id}`}
-                     className="absolute flex flex-col items-center justify-center transition-all duration-300 z-40"
-                     style={{ left: `${x}%`, top: `${y}%`, transform: 'translate(-50%, -50%)' }}
-                   >
-                       {isEditing ? (
-                         <div className="bg-black/95 border border-white/20 p-3 rounded-xl flex flex-col gap-2 pointer-events-auto shadow-2xl min-w-[130px] animate-in zoom-in duration-200">
-                            <div className="flex items-center gap-2">
-                               <span className="text-[8px] font-black text-slate-400 w-8">MULT</span>
-                               <input 
-                                 type="number" 
-                                 value={editValues.multiplier}
-                                 onChange={(e) => setEditValues(prev => ({...prev, multiplier: e.target.value}))}
-                                 className="flex-1 bg-slate-800 text-white text-[10px] font-mono px-1 py-0.5 rounded outline-none focus:ring-1 focus:ring-fuchsia-500"
-                               />
-                            </div>
-                            <div className="flex items-center gap-2">
-                               <span className="text-[8px] font-black text-slate-400 w-8">TIME</span>
-                               <input 
-                                 type="number" 
-                                 value={editValues.time}
-                                 onChange={(e) => setEditValues(prev => ({...prev, time: e.target.value}))}
-                                 className="flex-1 bg-slate-800 text-white text-[10px] font-mono px-1 py-0.5 rounded outline-none focus:ring-1 focus:ring-fuchsia-500"
-                               />
-                            </div>
-                            <div className="flex gap-2 mt-1">
-                               <button 
-                                 onClick={(e) => handleSave(e, sig)}
-                                 className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white text-[9px] font-black py-1 rounded"
-                               >
-                                 SAVE
-                               </button>
-                               <button 
-                                 onClick={handleCancel}
-                                 className="flex-1 bg-rose-600 hover:bg-rose-500 text-white text-[9px] font-black py-1 rounded"
-                               >
-                                 CANCEL
-                               </button>
-                            </div>
-                         </div>
-                       ) : (
-                         <div className={`pointer-events-auto flex flex-col gap-1 backdrop-blur-md border px-2 py-1.5 rounded-xl shadow-[0_0_15px_rgba(0,0,0,0.8)] animate-in zoom-in duration-300 group cursor-pointer min-w-[50px] items-center ${isHigh ? 'bg-rose-950/90 border-rose-500/60' : 'bg-fuchsia-950/90 border-fuchsia-500/60'}`}>
-                             <div className="flex items-center gap-2 border-b border-white/10 pb-1">
-                               <span className={`text-[10px] font-black mono leading-none ${isHigh ? 'text-rose-400' : 'text-fuchsia-400'}`}>{sig.multiplier?.toFixed(2)}x</span>
-                               {/* Edit Button */}
-                               <button 
-                                 onClick={(e) => handleEditClick(e, sig)}
-                                 className="w-3 h-3 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-[6px] transition-colors opacity-0 group-hover:opacity-100"
-                               >
-                                 ✏️
-                               </button>
-                             </div>
-                             
-                             {/* Countdown Timer */}
-                             <div className="flex items-center gap-1.5">
-                                <span className={`text-[8px] font-mono font-bold leading-none ${isHigh ? 'text-white' : 'text-slate-300'}`}>
-                                   {(sig.timeRemaining || 0).toFixed(1)}s
-                                </span>
-                                <div className={`w-1 h-1 rounded-full animate-pulse ${isHigh ? 'bg-rose-500' : 'bg-fuchsia-500'}`}></div>
-                             </div>
-                         </div>
-                       )}
-                   </div>
-               )
-           })}
-        </div>
-
         {/* Central Telemetry Hub - Background & Progress Ring */}
         <div className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-44 h-44 rounded-full bg-black/98 backdrop-blur-3xl border-2 flex flex-col items-center justify-center z-40 shadow-2xl transition-colors duration-300 overflow-hidden
           ${isHighValueCrash ? 'border-rose-500 shadow-rose-500/30' : 'border-fuchsia-500/30 shadow-fuchsia-500/30'}
@@ -463,27 +385,95 @@ const RadarView: React.FC<RadarViewProps> = ({
           })}
         </svg>
 
-        {/* Node Icons */}
+        {/* Unified Node Icons with Integrated Countdown */}
         {positionedSignals.map(sig => {
           const isSelected = sig.id === selectedSignalId;
           const sigIsHighValue = (sig.multiplier || 0) >= 2.10;
+          const isEditing = editingId === sig.id;
+
           return (
             <div 
               key={sig.id} 
-              className={`absolute z-30 transition-all duration-300 cursor-pointer ${isSelected ? 'scale-125' : 'scale-100'}`}
+              className={`absolute z-30 transition-all duration-300`}
               style={{ left: `${sig.x}%`, top: `${sig.y}%`, transform: 'translate(-50%, -50%)' }}
-              onClick={() => onSelectSignal(sig.id)}
             >
-              <div 
-                className={`relative rounded-full border border-white/20 transition-all ${isSelected ? 'ring-2 ring-white shadow-[0_0_15px_white]' : 'shadow-lg'} ${sigIsHighValue ? 'animate-pulse' : ''}`}
-                style={{ 
-                  width: `${sig.radius * 2}px`, 
-                  height: `${sig.radius * 2}px`, 
-                  backgroundColor: sig.color,
-                  boxShadow: sig.tier > 0 ? `0 0 15px ${sig.color}` : 'none'
-                }}
-              >
-              </div>
+              {isEditing ? (
+                 <div className="bg-black/95 border border-white/20 p-3 rounded-xl flex flex-col gap-2 shadow-2xl min-w-[130px] animate-in zoom-in duration-200 z-50 relative">
+                    <div className="flex items-center gap-2">
+                       <span className="text-[8px] font-black text-slate-400 w-8">MULT</span>
+                       <input 
+                         type="number" 
+                         value={editValues.multiplier}
+                         onChange={(e) => setEditValues(prev => ({...prev, multiplier: e.target.value}))}
+                         className="flex-1 bg-slate-800 text-white text-[10px] font-mono px-1 py-0.5 rounded outline-none focus:ring-1 focus:ring-fuchsia-500"
+                       />
+                    </div>
+                    <div className="flex items-center gap-2">
+                       <span className="text-[8px] font-black text-slate-400 w-8">TIME</span>
+                       <input 
+                         type="number" 
+                         value={editValues.time}
+                         onChange={(e) => setEditValues(prev => ({...prev, time: e.target.value}))}
+                         className="flex-1 bg-slate-800 text-white text-[10px] font-mono px-1 py-0.5 rounded outline-none focus:ring-1 focus:ring-fuchsia-500"
+                       />
+                    </div>
+                    <div className="flex gap-2 mt-1">
+                       <button 
+                         onClick={(e) => handleSave(e, sig)}
+                         className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white text-[9px] font-black py-1 rounded"
+                       >
+                         SAVE
+                       </button>
+                       <button 
+                         onClick={handleCancel}
+                         className="flex-1 bg-rose-600 hover:bg-rose-500 text-white text-[9px] font-black py-1 rounded"
+                       >
+                         CANCEL
+                       </button>
+                    </div>
+                 </div>
+              ) : (
+                <div 
+                   className="flex flex-col items-center cursor-pointer group relative"
+                   onClick={() => onSelectSignal(sig.id)}
+                >
+                   {/* The Node Dot */}
+                   <div 
+                     className={`relative rounded-full border transition-all duration-300 flex items-center justify-center
+                       ${isSelected ? 'ring-2 ring-white scale-110' : 'scale-100'} 
+                       ${sigIsHighValue ? 'bg-rose-500 border-rose-300 shadow-[0_0_20px_rgba(244,63,94,0.6)]' : 'bg-fuchsia-500 border-fuchsia-300 shadow-[0_0_15px_rgba(168,85,247,0.4)]'}
+                     `}
+                     style={{ 
+                       width: `${sig.radius * 2}px`, 
+                       height: `${sig.radius * 2}px`,
+                     }}
+                   >
+                     {/* Edit trigger */}
+                     <button 
+                        onClick={(e) => handleEditClick(e, sig)}
+                        className="absolute -top-3 -right-3 w-4 h-4 bg-white text-black rounded-full flex items-center justify-center text-[8px] opacity-0 group-hover:opacity-100 transition-opacity z-10"
+                     >
+                       ✏️
+                     </button>
+                   </div>
+                   
+                   {/* Integrated Info Badge (Multiplier + Countdown Timer) */}
+                   <div className={`absolute mt-4 flex flex-col items-center transition-all duration-300 ${isSelected ? 'scale-110' : 'scale-100 group-hover:scale-105'}`}>
+                      {/* Multiplier Tag */}
+                      <div className={`px-2 py-0.5 bg-black/80 backdrop-blur-md border rounded-t-md flex items-center justify-center min-w-[40px] ${sigIsHighValue ? 'border-rose-500/50 text-rose-400' : 'border-fuchsia-500/50 text-fuchsia-400'}`}>
+                         <span className="text-[9px] font-black mono">{sig.multiplier?.toFixed(2)}x</span>
+                      </div>
+                      
+                      {/* Countdown Tag */}
+                      <div className={`px-2 py-0.5 bg-white/10 backdrop-blur-md border-x border-b rounded-b-md flex items-center justify-center gap-1 min-w-[40px] ${sigIsHighValue ? 'border-rose-500/50' : 'border-fuchsia-500/50'}`}>
+                         <span className="text-[8px] font-bold text-white mono tabular-nums">
+                            {(sig.timeRemaining || 0).toFixed(1)}s
+                         </span>
+                         <div className={`w-1 h-1 rounded-full animate-pulse ${sigIsHighValue ? 'bg-rose-500' : 'bg-fuchsia-500'}`}></div>
+                      </div>
+                   </div>
+                </div>
+              )}
             </div>
           );
         })}

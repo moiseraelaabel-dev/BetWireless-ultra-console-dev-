@@ -17,7 +17,7 @@ interface SportsTerminalProps {
 }
 
 const SportsTerminal: React.FC<SportsTerminalProps> = ({ data, globalSports, onBack }) => {
-  const [activeTab, setActiveTab] = useState<'MOMENTUM' | 'GOALS' | 'HISTORY' | 'NODES' | 'FORM'>('MOMENTUM');
+  const [activeTab, setActiveTab] = useState<'MOMENTUM' | 'GOALS' | 'HISTORY' | 'NODES' | 'FORM' | 'ODDS'>('MOMENTUM');
 
   const wins = data.form?.filter(f => f === 'W').length || 0;
   const losses = data.form?.filter(f => f === 'L').length || 0;
@@ -144,6 +144,7 @@ const SportsTerminal: React.FC<SportsTerminalProps> = ({ data, globalSports, onB
         <div className="w-28 border-r border-emerald-500/15 flex flex-col bg-black/80">
           {[
             { id: 'MOMENTUM', icon: '⚽', label: 'Radar' },
+            { id: 'ODDS', icon: '📈', label: 'Odds' },
             { id: 'GOALS', icon: '🥅', label: 'Goals' },
             { id: 'HISTORY', icon: '🕰️', label: 'History' },
             { id: 'FORM', icon: '📊', label: 'Form' },
@@ -336,6 +337,59 @@ const SportsTerminal: React.FC<SportsTerminalProps> = ({ data, globalSports, onB
                       </div>
                     )}
                   </div>
+                </div>
+              )}
+
+              {activeTab === 'ODDS' && (
+                <div className="h-full flex flex-col p-6 overflow-hidden animate-in slide-in-from-right-12 duration-700">
+                   <div className="flex items-center justify-between mb-6">
+                      <h4 className="text-emerald-400 font-black uppercase italic tracking-widest text-[11px]">LIVE_BETTING_MATRIX</h4>
+                      <div className="flex items-center gap-2">
+                         <div className="w-2 h-2 rounded-full bg-rose-500 animate-pulse"></div>
+                         <span className="text-[9px] font-black text-rose-500 uppercase tracking-widest">REAL-TIME DATASTREAM</span>
+                      </div>
+                   </div>
+                   
+                   <div className="flex-1 overflow-y-auto no-scrollbar space-y-4 pr-2">
+                      {liveMatches.length > 0 ? (
+                        liveMatches.map((match: any, idx: number) => (
+                          <div key={idx} className="bg-black/80 border border-emerald-500/20 rounded-2xl p-5 hover:border-emerald-500/50 transition-all group/odd">
+                             <div className="flex justify-between items-start mb-4">
+                                <div className="flex flex-col gap-1">
+                                   <div className="flex items-center gap-2">
+                                      <span className="text-[8px] font-black text-slate-500 uppercase">{match.league || 'WORLD LEAGUE'}</span>
+                                      <span className="text-[8px] font-black text-emerald-500 bg-emerald-500/10 px-1.5 py-0.5 rounded italic">{match.minute || '45'}'</span>
+                                   </div>
+                                   <h5 className="text-[12px] font-black text-white uppercase italic">{match.match}</h5>
+                                </div>
+                                <div className="bg-emerald-500/10 px-3 py-1 rounded-lg border border-emerald-500/30">
+                                   <span className="text-lg font-black text-white mono italic tracking-tighter">{match.score || '0-0'}</span>
+                                </div>
+                             </div>
+                             
+                             <div className="grid grid-cols-3 gap-3">
+                                <div className="flex flex-col items-center bg-white/5 p-2 rounded-xl border border-white/5 hover:bg-emerald-500/10 hover:border-emerald-500/20 transition-all cursor-pointer">
+                                   <span className="text-[7px] font-black text-slate-500 uppercase mb-1">HOME (1)</span>
+                                   <span className="text-sm font-black text-emerald-400 mono italic">{match.odds?.home || '1.85'}</span>
+                                </div>
+                                <div className="flex flex-col items-center bg-white/5 p-2 rounded-xl border border-white/5 hover:bg-emerald-500/10 hover:border-emerald-500/20 transition-all cursor-pointer">
+                                   <span className="text-[7px] font-black text-slate-500 uppercase mb-1">DRAW (X)</span>
+                                   <span className="text-sm font-black text-emerald-400 mono italic">{match.odds?.draw || '3.40'}</span>
+                                </div>
+                                <div className="flex flex-col items-center bg-white/5 p-2 rounded-xl border border-white/5 hover:bg-emerald-500/10 hover:border-emerald-500/20 transition-all cursor-pointer">
+                                   <span className="text-[7px] font-black text-slate-500 uppercase mb-1">AWAY (2)</span>
+                                   <span className="text-sm font-black text-emerald-400 mono italic">{match.odds?.away || '4.20'}</span>
+                                </div>
+                             </div>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="h-full flex flex-col items-center justify-center opacity-30 gap-4">
+                           <div className="w-12 h-12 border-2 border-slate-700 border-t-emerald-500 rounded-full animate-spin"></div>
+                           <p className="text-[10px] font-black uppercase tracking-widest italic">SYNCING WITH WORLD NODES...</p>
+                        </div>
+                      )}
+                   </div>
                 </div>
               )}
 

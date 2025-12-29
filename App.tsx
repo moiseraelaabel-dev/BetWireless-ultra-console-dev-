@@ -11,6 +11,18 @@ import SportsTerminal from './components/SportsTerminal';
 import BallLoader from './components/BallLoader';
 import DevHub from './components/DevHub';
 
+const PlaneIcon: React.FC = () => (
+  <div className="relative animate-float-gentle inline-block align-middle mr-2">
+    <svg 
+      width="18" height="18" viewBox="0 0 24 24" fill="none" 
+      className="stroke-rose-400 drop-shadow-[0_0_8px_#fb7185]"
+      strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+    >
+      <path d="M17.8 19.2L16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.2c.3.4.8.5 1.3.3l.5-.3c.4-.2.6-.6.5-1.1z" />
+    </svg>
+  </div>
+);
+
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<AppTab>('AVIATOR'); 
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -44,190 +56,235 @@ const App: React.FC = () => {
         const last = prev[prev.length - 1];
         const newVal = Math.max(1, last.value + (Math.random() - 0.5));
         return [...prev.slice(1), { 
-          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }), 
-          value: newVal 
+           time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }), 
+           value: newVal 
         }];
       });
-    }, 5000);
+    }, 10000);
     return () => clearInterval(interval);
   }, []);
 
-  // Fetch World Sports Data
+  // Sync Global Sports Data - Reduced frequency to avoid 429 errors
   useEffect(() => {
-    const fetchGlobalSports = async () => {
+    const fetchSports = async () => {
       try {
         const data = await refreshGlobalSportsMarkets();
         setGlobalSports(data);
-      } catch (e) {
-        console.error("Failed to fetch world sports", e);
+      } catch (err) {
+        console.error("Failed to sync global sports", err);
       }
     };
-    fetchGlobalSports();
-    // Increased interval to 60s to avoid rate limiting (429 RESOURCE_EXHAUSTED)
-    const globalInterval = setInterval(fetchGlobalSports, 60000); 
-    return () => clearInterval(globalInterval);
+    fetchSports();
+    const interval = setInterval(fetchSports, 600000); // Sync every 10 minutes
+    return () => clearInterval(interval);
   }, []);
 
-  // Movement Countdown for Radar Signals
-  useEffect(() => {
-    const countdown = setInterval(() => {
-      setActiveSignals(prev => 
-        prev
-          .map(sig => ({
-            ...sig,
-            timeRemaining: Math.max(0, (sig.timeRemaining || 0) - 0.1)
-          }))
-          .filter(sig => (sig.timeRemaining || 0) > 0)
-      );
-    }, 100);
-    return () => clearInterval(countdown);
-  }, []);
+  const handleLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (loginInput.user && loginInput.pass) {
+      setIsLoggedIn(true);
+    }
+  };
 
-  const handlePredict = async () => {
+  const handlePredictMarket = async () => {
     setLoadingPrediction(true);
     try {
-      const res = await getMarketPrediction(marketData.slice(-10), selectedMarketNode);
-      setActiveSignals(prev => [...prev, { ...res, timeRemaining: res.timeRemaining || 20 }]);
-    } catch (e) { console.error(e); }
-    finally { setLoadingPrediction(false); }
-  };
-
-  const handleManualSyncApply = () => {
-    const multipliers = manualInput.split(',').map(v => parseFloat(v.trim())).filter(v => !isNaN(v));
-    if (multipliers.length > 0) {
-      const lastVal = multipliers[multipliers.length - 1];
-      const manualSignal: PredictionResult = {
-        id: 'manual-' + Math.random().toString(36).substring(2, 7),
-        direction: lastVal > 2 ? 'UP' : 'DOWN',
-        confidence: 98,
-        multiplier: lastVal * 1.05,
-        timeRemaining: 25,
-        timestamp: new Date().toLocaleTimeString('en-GB', { timeZone: 'Africa/Gaborone', hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-        reasoning: `Manual Node Handshake [${selectedMarketNode}]: Calibrated sequence using external server data. Probability weight maximized for regional node synchronization.`,
-        isManual: true,
-        marketNode: selectedMarketNode
-      };
-      setActiveSignals(prev => [...prev, manualSignal]);
+      const prediction = await getMarketPrediction(marketData, selectedMarketNode);
+      setActiveSignals(prev => [prediction, ...prev].slice(0, 5));
+      setSelectedSignalId(prediction.id);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoadingPrediction(false);
     }
-    setIsManualSyncOpen(false);
-    setManualInput('');
-  };
-  
-  const handleSignalUpdate = (updatedSignal: PredictionResult) => {
-    setActiveSignals(prev => prev.map(s => s.id === updatedSignal.id ? updatedSignal : s));
   };
 
-  const handleSports = async () => {
+  const handlePredictSports = async (e: React.FormEvent) => {
+    e.preventDefault();
     if (!sportsInput) return;
     setLoadingSports(true);
     try {
-      const res = await getSportsPrediction(sportsInput);
-      setSportsPrediction(res);
-    } catch (e) { console.error(e); }
-    finally { setLoadingSports(false); }
+      const prediction = await getSportsPrediction(sportsInput);
+      setSportsPrediction(prediction);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoadingSports(false);
+    }
   };
+
+  const handleManualSync = () => {
+    if (!manualInput) return;
+    const val = parseFloat(manualInput);
+    if (isNaN(val)) return;
+
+    const manualSig: PredictionResult = {
+      id: 'manual-' + Math.random().toString(36).substring(2, 9),
+      direction: val >= 2.0 ? 'UP' : 'DOWN',
+      confidence: 99,
+      reasoning: "Manual Node Sync verified for Botswana Cluster.",
+      timestamp: new Date().toLocaleTimeString('en-GB', { timeZone: 'Africa/Gaborone' }),
+      multiplier: val,
+      timeRemaining: 30,
+      isManual: true,
+      marketNode: selectedMarketNode
+    };
+
+    setActiveSignals(prev => [manualSig, ...prev].slice(0, 5));
+    setSelectedSignalId(manualSig.id);
+    setIsManualSyncOpen(false);
+    setManualInput('');
+  };
+
+  const handleSignalUpdate = (updated: PredictionResult) => {
+    setActiveSignals(prev => prev.map(s => s.id === updated.id ? updated : s));
+  };
+
+  const currentSignal = activeSignals.find(s => s.id === selectedSignalId) || activeSignals[0] || null;
 
   if (!isLoggedIn) {
     return (
-      <div className="min-h-screen bg-[#05020a] flex items-center justify-center p-10 font-sans">
-        <div className="max-w-md w-full glass-card p-12 rounded-[2rem] border-2 border-fuchsia-500/20 shadow-[0_0_100px_rgba(217,70,239,0.1)]">
-           <div className="text-center mb-12">
-              <div className="w-32 h-32 bg-white rounded-full mx-auto mb-8 flex items-center justify-center shadow-[0_0_50px_white] animate-soccer-spin-slow overflow-hidden border-4 border-black relative">
-                 <span className="text-[10px] font-black text-black transform -rotate-12 italic leading-tight text-center">BET<br/>WIRELESS</span>
-                 <div className="absolute inset-0 bg-black/5 grid grid-cols-2 grid-rows-2">
-                    <div className="border border-white/20"></div><div className="bg-black/10 border border-white/20"></div>
-                    <div className="bg-black/10 border border-white/20"></div><div className="border border-white/20"></div>
-                 </div>
+      <div className="min-h-screen bg-[#05020a] flex items-center justify-center p-4 font-black">
+        <div className="w-full max-w-md bg-[#120a25] border-4 border-purple-600/30 rounded-[3rem] p-10 shadow-2xl animate-in zoom-in duration-500">
+           <div className="flex flex-col items-center mb-10">
+              <div className="w-20 h-20 bg-purple-600 rounded-2xl flex items-center justify-center text-4xl mb-4 shadow-[0_0_40px_#9333ea]">⚡</div>
+              <h1 className="text-4xl text-white italic tracking-tighter uppercase">BetWireless <span className="text-purple-500">Ultra</span></h1>
+              <p className="text-[10px] text-slate-500 uppercase tracking-[0.4em] mt-2 font-bold">Gaborone Node v3.1</p>
+           </div>
+           
+           <form onSubmit={handleLogin} className="space-y-6">
+              <div className="space-y-2">
+                 <label className="text-[10px] text-purple-400 uppercase tracking-widest ml-4">Authorized User</label>
+                 <input 
+                   type="text" 
+                   required
+                   value={loginInput.user}
+                   onChange={(e) => setLoginInput(prev => ({...prev, user: e.target.value}))}
+                   className="w-full bg-black/40 border-2 border-white/5 rounded-2xl px-6 py-4 text-white placeholder-slate-600 outline-none focus:border-purple-600 transition-all"
+                   placeholder="VIP_ID_0000"
+                 />
               </div>
-              <h1 className="text-3xl font-black text-white italic uppercase tracking-tighter">Node Gateway</h1>
-              <p className="text-[10px] text-slate-500 mt-2 tracking-[0.4em] uppercase">Auth-Key Required for Uplink</p>
-           </div>
-           <div className="space-y-6">
-              <input type="text" placeholder="Gaborone_Admin_ID" className="w-full bg-black border-2 border-white/10 rounded-2xl p-5 text-white outline-none focus:border-fuchsia-600 transition-all font-mono" value={loginInput.user} onChange={e => setLoginInput(p => ({...p, user: e.target.value}))} />
-              <input type="password" placeholder="••••••••" className="w-full bg-black border-2 border-white/10 rounded-2xl p-5 text-white outline-none focus:border-fuchsia-600 transition-all" value={loginInput.pass} onChange={e => setLoginInput(p => ({...p, pass: e.target.value}))} />
-              <button onClick={() => setIsLoggedIn(true)} className="w-full py-5 bg-fuchsia-600 text-white font-black rounded-2xl uppercase tracking-widest hover:bg-white hover:text-fuchsia-600 transition-all shadow-xl">Handshake Node</button>
-           </div>
-           <p className="text-[9px] text-slate-600 text-center mt-8 italic">Demo Credentials: admin / 1234</p>
+              <div className="space-y-2">
+                 <label className="text-[10px] text-purple-400 uppercase tracking-widest ml-4">Node Pass-Code</label>
+                 <input 
+                   type="password" 
+                   required
+                   value={loginInput.pass}
+                   onChange={(e) => setLoginInput(prev => ({...prev, pass: e.target.value}))}
+                   className="w-full bg-black/40 border-2 border-white/5 rounded-2xl px-6 py-4 text-white placeholder-slate-600 outline-none focus:border-purple-600 transition-all"
+                   placeholder="••••••••"
+                 />
+              </div>
+              <button 
+                type="submit"
+                className="w-full bg-purple-600 hover:bg-white hover:text-purple-600 text-white py-5 rounded-2xl transition-all shadow-xl active:scale-95 text-lg uppercase tracking-[0.2em] italic"
+              >
+                Establish Link
+              </button>
+           </form>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[#05020a] text-slate-100 font-sans pb-48">
-      <header className="h-32 backdrop-blur-3xl border-b-2 border-fuchsia-900/40 flex items-center justify-between px-12 bg-[#0a0515]/95 sticky top-0 z-[60] shadow-2xl">
-        <div className="flex items-center gap-8">
-           <div className="relative w-24 h-24 flex items-center justify-center">
-              <div className="absolute w-16 h-16 bg-white rounded-full border-2 border-black shadow-[0_0_30px_white] z-10 flex items-center justify-center animate-soccer-spin-slow overflow-hidden">
-                 <span className="text-[7px] font-black text-black transform -rotate-12 italic leading-none text-center">BET<br/>WIRELESS</span>
+    <div className="min-h-screen bg-[#05020a] text-slate-200 font-bold overflow-x-hidden selection:bg-purple-600 selection:text-white">
+      {/* Navigation Rail */}
+      <nav className="fixed bottom-10 left-1/2 -translate-x-1/2 z-[100] bg-black/80 backdrop-blur-2xl px-8 py-4 rounded-[2.5rem] border-2 border-white/10 shadow-[0_20px_60px_rgba(0,0,0,0.8)] flex items-center gap-10">
+         {(['AVIATOR', 'SPORTS', 'CAMERA', 'DEV_HUB'] as AppTab[]).map(tab => (
+            <button 
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className={`flex items-center text-[10px] font-black uppercase tracking-[0.3em] transition-all hover:scale-110 active:scale-90 ${activeTab === tab ? 'text-purple-500 scale-110' : 'text-slate-500'}`}
+            >
+              {tab === 'AVIATOR' && <PlaneIcon />}
+              <span>{tab}</span>
+            </button>
+         ))}
+      </nav>
+
+      <main className="max-w-[1400px] mx-auto p-6 pt-12 pb-40">
+        <header className="flex flex-col md:flex-row justify-between items-center mb-16 gap-8">
+           <div className="flex items-center gap-6">
+              <div className="w-16 h-16 bg-purple-600 rounded-2xl flex items-center justify-center text-3xl shadow-2xl rotate-12 transition-transform hover:rotate-0">⚡</div>
+              <div>
+                 <h1 className="text-5xl font-black italic tracking-tighter uppercase leading-none">BetWireless <span className="text-purple-600">Ultra</span></h1>
+                 <div className="flex items-center gap-3 mt-2">
+                    <span className="text-[10px] text-slate-500 uppercase tracking-[0.4em]">Regional Uplink:</span>
+                    <span className="text-[10px] text-emerald-500 font-black uppercase tracking-[0.2em] animate-pulse">● Gaborone_Live</span>
+                 </div>
               </div>
-              <svg className="absolute inset-0 w-full h-full animate-rotate-reverse z-0">
-                 <path d="M 50,10 A 40,40 0 1,1 50,90 A 40,40 0 1,1 50,10" fill="none" stroke="url(#trackGrad)" strokeWidth="2" strokeDasharray="5,10" />
-                 <defs>
-                   <linearGradient id="trackGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-                     <stop offset="0%" stopColor="#d946ef" />
-                     <stop offset="100%" stopColor="#a855f7" />
-                   </linearGradient>
-                 </defs>
-              </svg>
            </div>
-           <div>
-              <span className="logo-font text-3xl font-black italic text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-fuchsia-500 to-amber-500">BETWIRELESS ULTRA</span>
-              <p className="text-[10px] font-black text-fuchsia-400 tracking-[0.4em] uppercase mt-1">Gaborone Node_7 Cluster | ALPHA-ENGINE</p>
+           
+           <div className="flex gap-4">
+              <div className="bg-white/5 px-6 py-3 rounded-2xl border border-white/10 flex flex-col items-end">
+                 <span className="text-[8px] text-slate-500 uppercase font-black">Cluster Load</span>
+                 <span className="text-sm font-black text-white italic">NODE_7_ALPHA</span>
+              </div>
+              <button 
+                onClick={() => setIsLoggedIn(false)}
+                className="w-12 h-12 bg-rose-950/20 text-rose-500 border border-rose-500/30 rounded-2xl flex items-center justify-center hover:bg-rose-500 hover:text-white transition-all"
+              >
+                🔒
+              </button>
            </div>
-        </div>
-        <div className="flex items-center gap-8">
-           <div className="text-right border-r border-white/10 pr-8">
-              <span className="text-[11px] font-black text-emerald-400 tracking-[0.4em] uppercase italic">Uplink Stable</span>
-           </div>
-           <button onClick={() => setIsLoggedIn(false)} className="w-14 h-14 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-xl hover:bg-rose-600 transition-all group">
-             <span>🔒</span>
-           </button>
-        </div>
-      </header>
-
-      <main className="max-w-[1900px] mx-auto px-8 py-12 space-y-16">
-        <StatsGrid stats={{ accuracy: '99.1%', dailyProfit: 'P 54,320', winRate: '96.4%', activeUsers: 'ULTRA NODES' }} />
-
-        <div className="flex justify-center">
-           <div className="glass-card p-3 rounded-[3rem] flex gap-3 border-2 border-fuchsia-500/20 shadow-2xl">
-              {[
-                {id: 'AVIATOR', icon: '✈️', label: 'AVIATOR'},
-                {id: 'SPORTS', icon: '⚽', label: 'SPORTS'},
-                {id: 'CAMERA', icon: '📸', label: 'SCAN'},
-                {id: 'DEV_HUB', icon: '💻', label: 'DEV'},
-                {id: 'TUTORIAL', icon: '🎓', label: 'ACADEMY'}
-              ].map(tab => (
-                <button key={tab.id} onClick={() => setActiveTab(tab.id as any)} className={`px-10 py-5 rounded-[2.5rem] flex items-center gap-3 transition-all font-black uppercase text-[10px] tracking-widest ${activeTab === tab.id ? 'bg-fuchsia-600 text-white shadow-xl scale-105' : 'hover:bg-white/5 text-slate-400'}`}>
-                   <span className="text-lg">{tab.icon}</span> {tab.label}
-                </button>
-              ))}
-           </div>
-        </div>
+        </header>
 
         {activeTab === 'AVIATOR' && (
-          <div className="grid grid-cols-1 xl:grid-cols-12 gap-8">
-             <div className="xl:col-span-5 flex flex-col items-center">
-                <RadarView 
-                   activeSignals={activeSignals} 
-                   selectedSignalId={selectedSignalId}
-                   onSelectSignal={setSelectedSignalId}
-                   onManualEntryOpen={() => setIsManualSyncOpen(true)}
-                   onPredict={handlePredict}
-                   loadingPrediction={loadingPrediction}
-                   trailDuration={trailPersistence}
-                   trailIntensity={trailIntensity}
-                   onSignalUpdate={handleSignalUpdate}
-                />
-             </div>
-             <div className="xl:col-span-7 flex flex-col gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 animate-in fade-in duration-700">
+             <div className="lg:col-span-4 space-y-10">
                 <SignalCard 
-                   prediction={activeSignals.length > 0 ? activeSignals[activeSignals.length - 1] : null} 
-                   loading={loadingPrediction} 
-                   isCollision={false}
-                   isCritical={(activeSignals.length > 0 ? activeSignals[activeSignals.length - 1].multiplier || 0 : 0) > 2.0}
+                  prediction={currentSignal} 
+                  loading={loadingPrediction} 
                 />
-                <div className="flex-1 min-h-[300px]">
+                
+                <div className="bg-white/5 border border-white/10 rounded-[2.5rem] p-8 space-y-8">
+                   <h3 className="text-[11px] font-black text-slate-500 uppercase tracking-[0.4em] italic">Telemetry Controls</h3>
+                   <div className="space-y-6">
+                      <div className="space-y-3">
+                         <div className="flex justify-between text-[10px] font-black uppercase tracking-widest text-slate-400">
+                            <span>Trail Persistence</span>
+                            <span>{trailPersistence / 1000}s</span>
+                         </div>
+                         <input 
+                           type="range" min="1000" max="10000" step="1000"
+                           value={trailPersistence}
+                           onChange={(e) => setTrailPersistence(parseInt(e.target.value))}
+                           className="w-full accent-purple-600 bg-slate-900 h-1.5 rounded-full appearance-none cursor-pointer"
+                         />
+                      </div>
+                      <div className="space-y-3">
+                         <div className="flex justify-between text-[10px] font-black uppercase tracking-widest text-slate-400">
+                            <span>Signal Intensity</span>
+                            <span>{trailIntensity}%</span>
+                         </div>
+                         <input 
+                           type="range" min="10" max="100" step="5"
+                           value={trailIntensity}
+                           onChange={(e) => setTrailIntensity(parseInt(e.target.value))}
+                           className="w-full accent-purple-600 bg-slate-900 h-1.5 rounded-full appearance-none cursor-pointer"
+                         />
+                      </div>
+                   </div>
+                </div>
+             </div>
+
+             <div className="lg:col-span-8 space-y-10">
+                <div className="bg-[#120a25]/80 border-4 border-purple-900/40 rounded-[4rem] p-10 shadow-2xl relative overflow-hidden">
+                   <RadarView 
+                     activeSignals={activeSignals}
+                     selectedSignalId={selectedSignalId}
+                     onSelectSignal={setSelectedSignalId}
+                     onPredict={handlePredictMarket}
+                     loadingPrediction={loadingPrediction}
+                     onManualEntryOpen={() => setIsManualSyncOpen(true)}
+                     trailDuration={trailPersistence}
+                     trailIntensity={trailIntensity}
+                     onSignalUpdate={handleSignalUpdate}
+                   />
+                </div>
+                
+                <div className="rounded-[4rem] overflow-hidden border-4 border-white/5 shadow-2xl">
                    <ChartSection data={marketData} globalSports={globalSports} />
                 </div>
              </div>
@@ -235,129 +292,114 @@ const App: React.FC = () => {
         )}
 
         {activeTab === 'SPORTS' && (
-           <div className="animate-in slide-in-from-right-10 fade-in duration-500">
-              {!sportsPrediction ? (
-                 <div className="flex flex-col items-center justify-center min-h-[600px] gap-8">
-                    <BallLoader size="lg" label="WAITING FOR KICKOFF..." />
-                    <div className="w-full max-w-2xl bg-black/60 border border-white/10 rounded-[3rem] p-4 flex gap-4 shadow-2xl">
-                       <input 
-                         type="text" 
-                         className="flex-1 bg-transparent px-8 py-4 text-white font-mono placeholder:text-slate-600 outline-none uppercase text-sm" 
-                         placeholder="Enter Team or Match Context (e.g. Arsenal vs Liverpool)..."
-                         value={sportsInput}
-                         onChange={e => setSportsInput(e.target.value)}
-                         onKeyDown={e => e.key === 'Enter' && handleSports()}
-                       />
-                       <button 
-                         onClick={handleSports}
-                         disabled={loadingSports}
-                         className="px-10 py-4 bg-emerald-500 hover:bg-white hover:text-emerald-600 text-black font-black rounded-[2.5rem] uppercase tracking-widest transition-all shadow-[0_0_20px_#10b981] disabled:opacity-50"
-                       >
-                         {loadingSports ? 'ANALYZING...' : 'PREDICT'}
-                       </button>
-                    </div>
-                 </div>
-              ) : (
-                 <SportsTerminal data={sportsPrediction} globalSports={globalSports} onBack={() => setSportsPrediction(null)} />
-              )}
+          <div className="space-y-12 animate-in slide-in-from-bottom-12 duration-700">
+             {!sportsPrediction ? (
+                <div className="max-w-4xl mx-auto space-y-12">
+                   <div className="bg-emerald-950/20 border-4 border-emerald-500/20 rounded-[4rem] p-12 text-center shadow-2xl">
+                      <h2 className="text-5xl font-black italic text-white uppercase mb-4">Tactical Sports Pulse</h2>
+                      <p className="text-slate-400 font-bold uppercase tracking-widest text-sm max-w-lg mx-auto leading-relaxed">Deep AI analysis of African and Global football markets with real-time BW node synchronization.</p>
+                   </div>
+                   
+                   <form onSubmit={handlePredictSports} className="relative group">
+                      <div className="absolute -inset-1 bg-gradient-to-r from-emerald-600 to-cyan-600 rounded-[3rem] blur opacity-25 group-hover:opacity-100 transition duration-1000 group-hover:duration-200"></div>
+                      <div className="relative flex items-center bg-[#120a25] rounded-[3rem] p-3 border-2 border-white/10">
+                        <input 
+                          type="text"
+                          value={sportsInput}
+                          onChange={(e) => setSportsInput(e.target.value)}
+                          placeholder="ENTER FIXTURE OR LEAGUE (E.G. CHIEFS VS PIRATES)"
+                          className="flex-1 bg-transparent px-10 py-6 text-white text-xl font-black italic uppercase placeholder-slate-600 outline-none"
+                        />
+                        <button 
+                          type="submit"
+                          disabled={loadingSports}
+                          className="bg-emerald-600 hover:bg-white hover:text-emerald-600 text-white px-12 py-6 rounded-[2.5rem] font-black uppercase italic tracking-widest transition-all shadow-xl disabled:opacity-50"
+                        >
+                          {loadingSports ? 'ANALYZING...' : 'INITIATE RADAR'}
+                        </button>
+                      </div>
+                   </form>
+
+                   {loadingSports && (
+                      <div className="flex flex-col items-center gap-10 py-20">
+                         <BallLoader size="lg" label="Establishing Gaborone Stadium Uplink..." />
+                      </div>
+                   )}
+                </div>
+             ) : (
+                <SportsTerminal 
+                  data={sportsPrediction} 
+                  globalSports={globalSports}
+                  onBack={() => setSportsPrediction(null)} 
+                />
+             )}
+          </div>
+        )}
+
+        {activeTab === 'CAMERA' && (
+           <div className="animate-in zoom-in duration-700">
+              <CameraView />
            </div>
         )}
 
-        {activeTab === 'CAMERA' && <CameraView isAnalyzing={false} />}
         {activeTab === 'DEV_HUB' && <DevHub />}
-        
-        {activeTab === 'TUTORIAL' && (
-          <div className="flex flex-col items-center justify-center min-h-[500px] text-center space-y-4 opacity-50">
-             <span className="text-6xl">🎓</span>
-             <h3 className="text-2xl font-black text-white uppercase italic">Academy Offline</h3>
-             <p className="text-xs uppercase tracking-widest">Training Modules Loading...</p>
-          </div>
-        )}
       </main>
 
       {/* Manual Sync Modal */}
       {isManualSyncOpen && (
-        <div className="fixed inset-0 bg-black/90 backdrop-blur-md z-[100] flex items-center justify-center p-8">
-           <div className="bg-[#120a25] border-2 border-amber-500 rounded-[3rem] p-10 w-full max-w-2xl shadow-[0_0_100px_rgba(245,158,11,0.2)] animate-in zoom-in-95 duration-300">
-              <div className="flex justify-between items-start mb-8">
-                  <div>
-                    <h3 className="text-2xl font-black text-amber-500 uppercase italic tracking-tighter mb-2">Manual Node Override</h3>
-                    <p className="text-xs text-amber-200/60 font-bold uppercase tracking-widest">Inject external server multipliers for calibration</p>
-                  </div>
-                  <div className="text-4xl">🛰️</div>
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 backdrop-blur-3xl bg-black/80">
+           <div className="w-full max-w-lg bg-slate-900 border-4 border-fuchsia-600/50 rounded-[3rem] p-12 shadow-[0_0_100px_rgba(168,85,247,0.3)] animate-in zoom-in duration-300">
+              <div className="flex justify-between items-center mb-10">
+                 <h2 className="text-3xl font-black italic text-white uppercase">Manual Node Sync</h2>
+                 <button onClick={() => setIsManualSyncOpen(false)} className="text-slate-500 hover:text-white transition-colors text-4xl">×</button>
               </div>
               
               <div className="space-y-8">
-                 <div>
-                    <label className="text-[10px] font-black text-amber-500/80 uppercase tracking-widest mb-3 block flex justify-between">
-                        <span>Multiplier Sequence (CSV)</span>
-                        <span className="opacity-50">e.g. 2.50, 1.10</span>
-                    </label>
+                 <div className="space-y-4">
+                    <label className="text-[11px] font-black text-fuchsia-400 uppercase tracking-widest ml-4">Target Multiplier</label>
                     <input 
-                      type="text" 
-                      placeholder="Input data stream..." 
-                      className="w-full bg-black/50 border-2 border-amber-500/30 rounded-2xl p-5 text-amber-100 font-mono focus:border-amber-500 outline-none transition-all placeholder:text-amber-900/50 text-sm"
+                      type="number" step="0.01"
                       value={manualInput}
-                      onChange={e => setManualInput(e.target.value)}
+                      onChange={(e) => setManualInput(e.target.value)}
+                      placeholder="E.G. 2.15"
+                      className="w-full bg-black/60 border-2 border-white/5 rounded-2xl px-8 py-6 text-2xl text-white font-black italic outline-none focus:border-fuchsia-600 transition-all"
                     />
                  </div>
-
-                 {/* Trail Persistence Slider */}
-                 <div className="bg-amber-500/5 p-6 rounded-2xl border border-amber-500/10">
-                    <div className="flex justify-between items-center mb-4">
-                         <div className="flex flex-col">
-                            <label className="text-[10px] font-black text-amber-500/80 uppercase tracking-widest">Signal Trail Persistence</label>
-                            <span className="text-[8px] text-amber-500/40 uppercase font-bold mt-1">Adjust visual decay rate</span>
-                         </div>
-                         <span className="text-xl font-black text-amber-400 font-mono italic">{(trailPersistence/1000).toFixed(1)}s</span>
-                    </div>
-                    <input 
-                       type="range" 
-                       min="1000" 
-                       max="10000" 
-                       step="500"
-                       value={trailPersistence}
-                       onChange={(e) => setTrailPersistence(parseInt(e.target.value))}
-                       className="w-full h-2 bg-slate-900 rounded-lg appearance-none cursor-pointer accent-amber-500"
-                    />
-                    <div className="flex justify-between mt-2 text-[8px] font-black text-amber-500/30 uppercase">
-                        <span>Short (1s)</span>
-                        <span>Long (10s)</span>
-                    </div>
+                 
+                 <div className="bg-fuchsia-600/10 border border-fuchsia-600/30 p-6 rounded-2xl flex items-start gap-4">
+                    <span className="text-2xl">⚠️</span>
+                    <p className="text-[10px] text-fuchsia-200/70 font-bold uppercase leading-relaxed tracking-wider">Warning: Manual overrides bypass automated telemetry. Certified VIP clearance required for cluster injection.</p>
                  </div>
 
-                 {/* Trail Intensity Slider */}
-                 <div className="bg-amber-500/5 p-6 rounded-2xl border border-amber-500/10">
-                    <div className="flex justify-between items-center mb-4">
-                         <div className="flex flex-col">
-                            <label className="text-[10px] font-black text-amber-500/80 uppercase tracking-widest">Trail Intensity & Opacity</label>
-                            <span className="text-[8px] text-amber-500/40 uppercase font-bold mt-1">Scale thickness based on multiplier weight</span>
-                         </div>
-                         <span className="text-xl font-black text-amber-400 font-mono italic">{trailIntensity}%</span>
-                    </div>
-                    <input 
-                       type="range" 
-                       min="10" 
-                       max="150" 
-                       step="10"
-                       value={trailIntensity}
-                       onChange={(e) => setTrailIntensity(parseInt(e.target.value))}
-                       className="w-full h-2 bg-slate-900 rounded-lg appearance-none cursor-pointer accent-amber-500"
-                    />
-                    <div className="flex justify-between mt-2 text-[8px] font-black text-amber-500/30 uppercase">
-                        <span>Fine Line</span>
-                        <span>Heavy Glow</span>
-                    </div>
-                 </div>
-
-                 <div className="grid grid-cols-2 gap-4 mt-4">
-                    <button onClick={() => setIsManualSyncOpen(false)} className="py-5 rounded-2xl font-black uppercase text-amber-500 border-2 border-amber-500/30 hover:bg-amber-500/10 transition-all text-xs tracking-widest">Cancel Abort</button>
-                    <button onClick={handleManualSyncApply} className="py-5 rounded-2xl font-black uppercase bg-amber-500 text-black hover:bg-amber-400 transition-all shadow-[0_0_30px_rgba(245,158,11,0.4)] text-xs tracking-widest">Inject Data Stream</button>
-                 </div>
+                 <button 
+                   onClick={handleManualSync}
+                   className="w-full bg-fuchsia-600 hover:bg-white hover:text-fuchsia-600 text-white py-6 rounded-2xl font-black uppercase italic text-xl tracking-widest transition-all shadow-2xl active:scale-95"
+                 >
+                   Inject Pulse
+                 </button>
               </div>
            </div>
         </div>
       )}
+      
+      <style>{`
+        @keyframes float-gentle {
+          0%, 100% { transform: translateY(0) rotate(0); }
+          50% { transform: translateY(-10px) rotate(5deg); }
+        }
+        .animate-float-gentle { animation: float-gentle 4s ease-in-out infinite; }
+        
+        @keyframes soccer-spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+        .animate-soccer-spin { animation: soccer-spin 5s linear infinite; }
+        
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        
+        .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+      `}</style>
     </div>
   );
 };
